@@ -252,7 +252,7 @@ function temLocalStorage(){
 }
 
 // ===================== GOOGLE DRIVE: ESTADO E AUTENTICAÇÃO =====================
-let driveState = { connected:false, connecting:false, fileId:null, lastModifiedTime:null, contaEmail:'' };
+let driveState = { connected:false, connecting:false, fileId:null, lastModifiedTime:null, contaEmail:'', duplicadosEncontrados:0 };
 let googleAccessToken = null;
 let googleTokenClient = null;
 let driveAnexos = {}; // cache em memória: storageKey -> dataUrl, espelha o que está salvo no Drive
@@ -297,12 +297,17 @@ async function driveApiFetchJson(url, options){
 }
 async function prepararArquivoDrive(){
   const q = encodeURIComponent(`name='${GOOGLE_DRIVE_FILENAME}' and trashed=false`);
-  const busca = await driveApiFetchJson('https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id,name,modifiedTime)&spaces=drive');
+  const busca = await driveApiFetchJson('https://www.googleapis.com/drive/v3/files?q='+q+'&orderBy=createdTime&fields=files(id,name,modifiedTime,createdTime)&spaces=drive&pageSize=50');
   if(busca && busca.files && busca.files.length){
+    if(busca.files.length > 1){
+      console.warn('Atenção: existem '+busca.files.length+' arquivos "'+GOOGLE_DRIVE_FILENAME+'" no Drive. Usando o mais antigo (original).', busca.files);
+    }
     driveState.fileId = busca.files[0].id;
     driveState.lastModifiedTime = busca.files[0].modifiedTime;
+    driveState.duplicadosEncontrados = busca.files.length - 1;
     return;
   }
+  driveState.duplicadosEncontrados = 0;
   const conteudoInicial = JSON.stringify(Object.assign({}, clone(DEFAULT_STATE), { __anexosData:{} }));
   const boundary = 'pc_boundary_'+Date.now();
   const metadata = { name: GOOGLE_DRIVE_FILENAME, mimeType: 'application/json' };
@@ -367,7 +372,7 @@ function desconectarGoogleDrive(){
   if(googleAccessToken && google && google.accounts && google.accounts.oauth2 && google.accounts.oauth2.revoke){
     try{ google.accounts.oauth2.revoke(googleAccessToken, ()=>{}); }catch(e){}
   }
-  driveState = { connected:false, connecting:false, fileId:null, lastModifiedTime:null, contaEmail:'' };
+  driveState = { connected:false, connecting:false, fileId:null, lastModifiedTime:null, contaEmail:'', duplicadosEncontrados:0 };
   googleAccessToken = null;
   driveAnexos = {};
   if(temLocalStorage()){ try{ localStorage.removeItem('pc-drive-enabled'); }catch(e){} }
@@ -762,6 +767,7 @@ function renderSidebar(){
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid var(--line);">
       ${driveState.connected ? `
         <div style="font-size:11px;background:var(--ok-bg);color:var(--ok);border-radius:6px;padding:6px 8px;margin-bottom:8px;">✓ Conectado ao Google Drive</div>
+        ${driveState.duplicadosEncontrados ? `<div style="font-size:11px;background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:6px 8px;margin-bottom:8px;">⚠ Existem ${driveState.duplicadosEncontrados+1} arquivos "${GOOGLE_DRIVE_FILENAME}" no Drive. Usando o mais antigo. Considere apagar os extras manualmente no Drive.</div>` : ''}
         <button class="small no-print" onclick="desconectarGoogleDrive()" style="width:100%;margin-bottom:10px;">Desconectar Drive</button>
       ` : `
         <button class="small no-print" onclick="conectarGoogleDrive()" style="width:100%;margin-bottom:10px;" ${driveState.connecting?'disabled':''}>${driveState.connecting?'Conectando...':'Conectar Google Drive'}</button>
@@ -1778,19 +1784,38 @@ function renderPorAnimal(p, cfg){
   if(!nomes.length){
     return `<div class="empty">Nenhuma foto ou ficha médica adicionada ainda. Adicione na aba "Fotos e vídeos" e marque o nome do animal em cada uma.</div>`;
   }
-  const gruposHtml = nomes.map(nome=>{
-    const itensHtml = grupos[nome].map(a=>`
-      <div style="width:220px;">
-        <div id="anexo-view-${a.id}" style="width:220px;height:220px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;overflow:hidden;border:1px solid #ccc;">Carregando...</div>
-        <div style="font-size:11px;text-align:center;margin-top:4px;">${a.tipo==='foto'?'Foto':'Ficha médica'} — ${escapeHtml(a.nome)}</div>
-      </div>
-    `).join('');
-    return `
-      <div style="margin-bottom:26px;page-break-inside:avoid;">
-        <h3 style="text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;">${escapeHtml(nome)}</h3>
-        <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${itensHtml}</div>
-      </div>
-    `;
+  const itemHtml = a => `
+    <div style="width:220px;">
+      <div id="anexo-view-${a.id}" style="width:220px;height:220px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;overflow:hidden;border:1px solid #ccc;">Carregando...</div>
+      <div style="font-size:11px;text-align:center;margin-top:4px;">${a.tipo==='foto'?'Foto':'Ficha médica'} — ${escapeHtml(a.nome)}</div>
+    </div>
+  `;
+  const gruposHtml = nomes.map((nome, idx)=>{
+    const itens = grupos[nome];
+    const fotos = itens.filter(a=>a.tipo==='foto');
+    const fichas = itens.filter(a=>a.tipo==='ficha');
+    const isUltimoAnimal = idx === nomes.length-1;
+    let paginas = '';
+    if(fotos.length){
+      paginas += `
+        <div style="${(fichas.length || !isUltimoAnimal) ? 'page-break-after:always;' : ''}min-height:1px;">
+          <h3 style="text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;">${escapeHtml(nome)} — Fotos</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${fotos.map(itemHtml).join('')}</div>
+        </div>
+      `;
+    }
+    if(fichas.length){
+      paginas += `
+        <div style="${!isUltimoAnimal ? 'page-break-after:always;' : ''}min-height:1px;">
+          <h3 style="text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;">${escapeHtml(nome)} — Prontuário</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${fichas.map(itemHtml).join('')}</div>
+        </div>
+      `;
+    }
+    if(!paginas){
+      paginas = `<div style="${!isUltimoAnimal ? 'page-break-after:always;' : ''}"><h3 style="text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;">${escapeHtml(nome)}</h3></div>`;
+    }
+    return paginas;
   }).join('');
   return `
     <div class="doc-actions no-print">
@@ -1803,7 +1828,7 @@ function renderPorAnimal(p, cfg){
     </div>
   `;
 }
-function injetarConteudoAnexo(elId, dataUrl){
+async function injetarConteudoAnexo(elId, dataUrl){
   const el = document.getElementById(elId);
   if(!el) return;
   if(dataUrl.indexOf('data:application/pdf')===0){
@@ -1812,9 +1837,31 @@ function injetarConteudoAnexo(elId, dataUrl){
       const bstr = atob(arr[1]);
       let n = bstr.length; const u8 = new Uint8Array(n);
       while(n--){ u8[n]=bstr.charCodeAt(n); }
-      const blob = new Blob([u8], {type:'application/pdf'});
+      const blob = new Blob([u8.slice()], {type:'application/pdf'});
       const url = URL.createObjectURL(blob);
-      el.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;"></iframe>`;
+      if(typeof pdfjsLib !== 'undefined'){
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf = await pdfjsLib.getDocument({data: u8.slice()}).promise;
+        const page = await pdf.getPage(1);
+        const viewportBase = page.getViewport({scale:1});
+        const scale = 210 / viewportBase.width;
+        const viewport = page.getViewport({scale});
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({canvasContext: canvas.getContext('2d'), viewport: viewport}).promise;
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
+        canvas.style.display = 'block';
+        canvas.style.margin = '0 auto';
+        el.innerHTML = '';
+        el.style.cursor = 'pointer';
+        el.title = 'Clique para abrir o PDF completo';
+        el.appendChild(canvas);
+        el.onclick = ()=> window.open(url, '_blank');
+      } else {
+        el.innerHTML = `<a href="${url}" target="_blank" style="font-size:11px;">Abrir PDF</a>`;
+      }
     }catch(e){ el.innerHTML = '<span style="font-size:10px;color:var(--danger);">Erro ao exibir PDF</span>'; }
   } else {
     el.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;">`;
@@ -2235,6 +2282,7 @@ function renderLoginScreen(){
       </div>
       <h1 class="page-title">Prestação de contas</h1>
       <p class="page-sub">Entre com sua conta Google para acessar os dados da associação.</p>
+      <p style="font-size:11.5px;color:var(--warn);margin-top:-8px;margin-bottom:14px;">Importante: use sempre a mesma conta Google oficial da associação. Contas diferentes não compartilham os mesmos dados.</p>
       <div class="card" style="text-align:left;">
         <button class="primary no-print" onclick="conectarGoogleDrive()" style="width:100%;" ${driveState.connecting?'disabled':''}>${driveState.connecting?'Conectando...':'Entrar com o Google'}</button>
       </div>
