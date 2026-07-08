@@ -133,8 +133,8 @@
     .doc-preview table tr{ page-break-inside:avoid; page-break-after:auto; }
     .doc-preview h2, .doc-preview h3{ page-break-after:avoid; }
     .doc-preview .sig{ page-break-inside:avoid; }
-    .anexo-caixa{ height:calc(100vh - 90px); }
-    .anexo-caixa-primeira{ height:calc(100vh - 220px); }
+    .anexo-caixa{ height:calc(100vh - 70px); }
+    .anexo-caixa-primeira{ height:calc(100vh - 200px); }
   }
 </style>
 </head>
@@ -1843,7 +1843,6 @@ function renderPorAnimal(p, cfg){
   const itemHtml = (a, primeira) => `
     <div style="width:100%;">
       <div id="anexo-view-${a.id}" class="anexo-caixa${primeira ? ' anexo-caixa-primeira' : ''}">Carregando...</div>
-      <div style="font-size:11px;text-align:center;margin-top:4px;">${a.tipo==='foto'?'Foto':'Ficha médica'} — ${escapeHtml(a.nome)}</div>
     </div>
   `;
   const gruposHtml = nomes.map((nome, idx)=>{
