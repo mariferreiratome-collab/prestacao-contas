@@ -231,7 +231,8 @@ function parseISO(s){ if(!s) return null; const [y,m,d] = s.split('-').map(Numbe
 function formatDateBR(d){ if(!d) return ''; const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); return dd+'/'+mm+'/'+d.getFullYear(); }
 function formatDateLong(d){ if(!d) return ''; const meses=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']; return d.getDate()+' de '+meses[d.getMonth()]+' de '+d.getFullYear(); }
 function todayLocal(){ const t=new Date(); return new Date(t.getFullYear(),t.getMonth(),t.getDate()); }
-function docLogo(){ return `<div style="text-align:center;margin-bottom:10px;"><img src="data:image/png;base64,${LOGO_BASE64}" alt="Logo Associação SOS 4 Patas" style="width:76px;height:76px;"></div>`; }
+function logoAtual(){ return (state && state.logoBase64) ? state.logoBase64 : LOGO_BASE64; }
+function docLogo(){ return `<div style="text-align:center;margin-bottom:10px;"><img src="data:image/png;base64,${logoAtual()}" alt="Logo Associação SOS 4 Patas" style="width:76px;height:76px;"></div>`; }
 function notaSaldoNegativo(saldo){
   if(saldo >= 0) return '';
   return `<p style="margin-top:10px;font-size:12.5px;"><strong>Observação:</strong> o saldo negativo apresentado foi coberto com recursos próprios da Associação SOS Quatro Patas, não representando prejuízo ao erário nem descumprimento da finalidade do recurso público recebido.</p>`;
@@ -742,7 +743,7 @@ function renderSidebar(){
   }).join('');
   const html = `
     <div style="width:64px;height:64px;background:#fff;border-radius:12px;border:1px solid var(--line);padding:4px;margin-bottom:10px;display:flex;align-items:center;justify-content:center;">
-      <img src="data:image/png;base64,${LOGO_BASE64}" alt="Logo Associação SOS 4 Patas" style="max-width:100%;max-height:100%;">
+      <img src="data:image/png;base64,${logoAtual()}" alt="Logo Associação SOS 4 Patas" style="max-width:100%;max-height:100%;">
     </div>
     <div class="brand">SOS Quatro Patas</div>
     <div class="brand-sub">Prestação de contas</div>
@@ -984,6 +985,19 @@ function renderSeguranca(){
     </div>
     <div class="card">
       <button class="no-print" onclick="desconectarGoogleDrive()">Desconectar Google Drive</button>
+    </div>
+    <div class="card">
+      <strong style="font-size:13px;">Logo da associação</strong>
+      <p style="font-size:12.5px;margin:6px 0 10px;color:var(--muted);">Essa imagem aparece no topo dos relatórios e na barra lateral.</p>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;">
+        <img src="data:image/png;base64,${logoAtual()}" alt="Logo atual" style="width:64px;height:64px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px;">
+        <div>
+          <input type="file" id="logo-upload-input" accept="image/*" style="display:none;" onchange="alterarLogo(this)">
+          <button class="small no-print" onclick="document.getElementById('logo-upload-input').click()" style="margin-bottom:6px;">Trocar logo</button>
+          <br>
+          <button class="small no-print" onclick="restaurarLogoPadrao()">Restaurar logo padrão</button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -1638,6 +1652,45 @@ function comprimirImagem(file, maxDim, qualidade){
     });
   });
 }
+function prepararLogoUpload(file){
+  return lerImagemComoDataURL(file).then(dataUrl=>{
+    return new Promise((resolve,reject)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const maxDim = 400;
+        let width = img.width, height = img.height;
+        if(width>maxDim || height>maxDim){
+          if(width>height){ height = Math.round(height*maxDim/width); width = maxDim; }
+          else { width = Math.round(width*maxDim/height); height = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img,0,0,width,height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  });
+}
+async function alterarLogo(inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  try{
+    const dataUrl = await prepararLogoUpload(file);
+    state.logoBase64 = dataUrl.split(',')[1];
+    await saveState();
+    render();
+  }catch(e){ alert('Não foi possível processar essa imagem.'); }
+  inputEl.value = '';
+}
+function restaurarLogoPadrao(){
+  if(!window.confirm('Voltar para a logo padrão do sistema?')) return;
+  delete state.logoBase64;
+  saveState();
+  render();
+}
 async function adicionarFotos(inputEl, parcelaId){
   const files = Array.from(inputEl.files||[]);
   if(!files.length) return;
@@ -1785,8 +1838,8 @@ function renderPorAnimal(p, cfg){
     return `<div class="empty">Nenhuma foto ou ficha médica adicionada ainda. Adicione na aba "Fotos e vídeos" e marque o nome do animal em cada uma.</div>`;
   }
   const itemHtml = a => `
-    <div style="width:480px;max-width:100%;">
-      <div id="anexo-view-${a.id}" style="width:100%;height:650px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;border:1px solid #ccc;overflow:hidden;">Carregando...</div>
+    <div style="width:540px;max-width:100%;">
+      <div id="anexo-view-${a.id}" style="width:100%;height:900px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;border:1px solid #ccc;overflow:hidden;">Carregando...</div>
       <div style="font-size:11px;text-align:center;margin-top:4px;">${a.tipo==='foto'?'Foto':'Ficha médica'} — ${escapeHtml(a.nome)}</div>
     </div>
   `;
@@ -2281,7 +2334,7 @@ function renderLoginScreen(){
   document.getElementById('main').innerHTML = `
     <div style="max-width:360px;margin:70px auto;text-align:center;">
       <div style="width:80px;height:80px;background:#fff;border-radius:12px;border:1px solid var(--line);padding:4px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;">
-        <img src="data:image/png;base64,${LOGO_BASE64}" alt="Logo" style="max-width:100%;max-height:100%;">
+        <img src="data:image/png;base64,${logoAtual()}" alt="Logo" style="max-width:100%;max-height:100%;">
       </div>
       <h1 class="page-title">Prestação de contas</h1>
       <p class="page-sub">Entre com sua conta Google para acessar os dados da associação.</p>
