@@ -208,6 +208,7 @@ const DEFAULT_STATE = {
 
 let state = null;
 let sessionUnlocked = false;
+let acessoLiberadoLocal = false;
 function hashSimples(str){
   str = String(str||'');
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
@@ -351,6 +352,7 @@ async function conectarGoogleDrive(){
     if(!token){ alert('Não foi possível conectar ao Google Drive.'); driveState.connecting=false; render(); return; }
     await prepararArquivoDrive();
     driveState.connected = true;
+    if(temLocalStorage()){ try{ localStorage.setItem('pc-drive-enabled','1'); }catch(e){} }
     await loadState();
     localRev = Number(state.__rev)||0;
   }catch(e){
@@ -368,7 +370,28 @@ function desconectarGoogleDrive(){
   driveState = { connected:false, connecting:false, fileId:null, lastModifiedTime:null, contaEmail:'' };
   googleAccessToken = null;
   driveAnexos = {};
+  if(temLocalStorage()){ try{ localStorage.removeItem('pc-drive-enabled'); }catch(e){} }
   loadState().then(()=>{ localRev = Number(state.__rev)||0; render(); });
+}
+function comTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise(resolve=>setTimeout(()=>resolve(null), ms))
+  ]);
+}
+async function tentarReconectarDriveSilencioso(){
+  if(!temLocalStorage()) return false;
+  let habilitado = false;
+  try{ habilitado = localStorage.getItem('pc-drive-enabled') === '1'; }catch(e){}
+  if(!habilitado) return false;
+  if(!googleClientIdConfigurado()) return false;
+  try{
+    const token = await comTimeout(solicitarToken('none'), 4000);
+    if(!token) return false;
+    await prepararArquivoDrive();
+    driveState.connected = true;
+    return true;
+  }catch(e){ return false; }
 }
 // ==========================================================================
 
@@ -537,7 +560,7 @@ async function saveState(){
 
 async function verificarAtualizacoes(){
   if(verificandoAtualizacoes) return;
-  if(state && (state.__loadError || (state.security && state.security.senhaHash && !sessionUnlocked))) return;
+  if(state && (state.__loadError || (!driveState.connected && !acessoLiberadoLocal))) return;
   verificandoAtualizacoes = true;
   try{
     if(driveState.connected && driveState.fileId){
@@ -946,60 +969,17 @@ function criarParceiro(){
 function goDashboard(){ view = {page:'dashboard'}; render(); }
 function goSeguranca(){ view = {page:'seguranca'}; render(); }
 function renderSeguranca(){
-  const seg = state.security || {senhaHash:null};
   document.getElementById('main').innerHTML = `
-    <h1 class="page-title">Segurança</h1>
-    <p class="page-sub">Defina uma senha de acesso para este sistema. Isso protege contra acessos casuais — não é uma segurança de nível bancário, já que quem tiver um arquivo de backup ainda consegue ver os dados.</p>
-    ${!usandoArmazenamentoLocal ? `
+    <h1 class="page-title">Acesso e segurança</h1>
+    <p class="page-sub">O acesso a este sistema agora é feito exclusivamente pela sua conta Google. Não existe mais senha própria do sistema.</p>
     <div class="card" style="background:var(--ok-bg);border-color:var(--ok);">
-      <strong style="font-size:13px;color:var(--ok);">Dados compartilhados pelo link</strong>
-      <p style="font-size:12.5px;margin:6px 0 0;">Qualquer pessoa que abrir este mesmo link e souber a senha vê e edita os mesmos dados que você — é assim que a presidente, por exemplo, consegue acompanhar as mesmas prestações de contas. Compartilhe a senha só com quem deve ter acesso.</p>
+      <strong style="font-size:13px;color:var(--ok);">✓ Conectado com o Google</strong>
+      <p style="font-size:12.5px;margin:6px 0 0;">Os dados ficam salvos no arquivo <strong>prestacao-contas-dados.json</strong> no Google Drive. Qualquer pessoa com acesso a esse arquivo (compartilhado no Drive) e cadastrada como usuária de teste no projeto do Google Cloud consegue entrar e ver os mesmos dados.</p>
     </div>
-    ` : `
-    <div class="card" style="background:var(--warn-bg);border-color:var(--warn);">
-      <strong style="font-size:13px;color:var(--warn);">Modo local (este navegador apenas)</strong>
-      <p style="font-size:12.5px;margin:6px 0 0;">Agora mesmo o sistema está salvando os dados só neste navegador/computador — outra pessoa que abrir o mesmo link, em outro computador, não vai ver os mesmos dados. Para compartilhar de verdade com outras pessoas, é preciso abrir pelo link do Claude (não por um arquivo baixado).</p>
-    </div>
-    `}
     <div class="card">
-      ${seg.senhaHash ? `
-        <p style="font-size:13px;color:var(--ok);font-weight:bold;">Senha de acesso está ativa.</p>
-        <div class="field"><label>Senha atual</label><input type="password" id="seg-senha-atual"></div>
-        <div class="field"><label>Nova senha (deixe em branco para remover a proteção)</label><input type="password" id="seg-senha-nova"></div>
-        <div class="field"><label>Confirmar nova senha</label><input type="password" id="seg-senha-confirma"></div>
-        <button class="primary no-print" onclick="salvarSenha()">Salvar</button>
-      ` : `
-        <p style="font-size:13px;color:var(--muted);">Nenhuma senha definida — qualquer pessoa com o link consegue abrir o sistema.</p>
-        <div class="field"><label>Nova senha</label><input type="password" id="seg-senha-nova"></div>
-        <div class="field"><label>Confirmar nova senha</label><input type="password" id="seg-senha-confirma"></div>
-        <button class="primary no-print" onclick="salvarSenha()">Definir senha</button>
-      `}
+      <button class="no-print" onclick="desconectarGoogleDrive()">Desconectar Google Drive</button>
     </div>
   `;
-}
-function salvarSenha(){
-  const seg = state.security = state.security || {senhaHash:null};
-  const nova = (document.getElementById('seg-senha-nova').value||'').trim();
-  const confirmaEl = document.getElementById('seg-senha-confirma');
-  const confirma = confirmaEl ? (confirmaEl.value||'').trim() : '';
-  if(seg.senhaHash){
-    const atualEl = document.getElementById('seg-senha-atual');
-    const atual = atualEl ? (atualEl.value||'').trim() : '';
-    if(hashSimples(atual) !== seg.senhaHash){ alert('Senha atual incorreta.'); return; }
-  }
-  if(!nova){
-    seg.senhaHash = null;
-    saveState();
-    alert('Proteção por senha removida.');
-    render();
-    return;
-  }
-  if(nova !== confirma){ alert('As senhas digitadas não coincidem.'); return; }
-  if(nova.length<4){ alert('Use uma senha com pelo menos 4 caracteres.'); return; }
-  seg.senhaHash = hashSimples(nova);
-  saveState();
-  alert('Senha definida com sucesso.');
-  render();
 }
 function goImportar(){
   const primeiroMunicipio = Object.keys(state.config).sort()[0];
@@ -1092,7 +1072,7 @@ function importarBackup(inputEl){
       if(!state.parcelas) state.parcelas = [];
       if(!state.fornecedores) state.fornecedores = clone(DEFAULT_STATE.fornecedores);
       if(!state.security) state.security = { senhaHash: null };
-      sessionUnlocked = true;
+      acessoLiberadoLocal = true;
       Object.keys(fotoCache).forEach(k=>delete fotoCache[k]);
       const chavesFotos = Object.keys(anexosData);
       for(const key of chavesFotos){
@@ -2221,7 +2201,7 @@ function renderAtividades(p, cfg){
 }
 
 function render(){
-  if(state && state.security && state.security.senhaHash && !sessionUnlocked){
+  if(!driveState.connected && !acessoLiberadoLocal){
     renderLoginScreen();
     return;
   }
@@ -2254,18 +2234,12 @@ function renderLoginScreen(){
         <img src="data:image/png;base64,${LOGO_BASE64}" alt="Logo" style="max-width:100%;max-height:100%;">
       </div>
       <h1 class="page-title">Prestação de contas</h1>
-      <p class="page-sub">Este sistema está protegido. Digite a senha de acesso.</p>
+      <p class="page-sub">Entre com sua conta Google para acessar os dados da associação.</p>
       <div class="card" style="text-align:left;">
-        <div class="field"><label>Senha</label><input type="password" id="login-senha" onkeydown="if(event.key==='Enter'){ tentarLogin(); }"></div>
-        <div id="login-erro" style="color:var(--danger);font-size:12.5px;margin-bottom:8px;"></div>
-        <button class="primary" onclick="tentarLogin()" style="width:100%;">Entrar</button>
+        <button class="primary no-print" onclick="conectarGoogleDrive()" style="width:100%;" ${driveState.connecting?'disabled':''}>${driveState.connecting?'Conectando...':'Entrar com o Google'}</button>
       </div>
       <div style="margin-top:20px;font-size:12px;color:var(--muted);">
-        Os dados ficam no Google Drive da associação?
-        <br><button class="small no-print" onclick="conectarGoogleDrive()" style="margin-top:6px;" ${driveState.connecting?'disabled':''}>${driveState.connecting?'Conectando...':'Conectar Google Drive'}</button>
-      </div>
-      <div style="margin-top:20px;font-size:12px;color:var(--muted);">
-        Esqueceu a senha? Se tiver um arquivo de backup exportado antes, pode restaurá-lo aqui (isso substitui todos os dados atuais):
+        Não consegue entrar com o Google agora? Se tiver um arquivo de backup exportado antes, pode restaurá-lo aqui (isso substitui todos os dados atuais na visualização local):
         <br><button class="small no-print" onclick="document.getElementById('login-import-backup').click()" style="margin-top:6px;">Importar backup</button>
         <input type="file" id="login-import-backup" accept="application/json" style="display:none;" onchange="importarBackup(this)">
       </div>
@@ -2284,6 +2258,7 @@ function tentarLogin(){
 }
 
 (async function init(){
+  await tentarReconectarDriveSilencioso();
   await loadState();
   localRev = Number(state.__rev)||0;
   render();
