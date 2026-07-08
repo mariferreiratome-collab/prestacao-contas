@@ -718,7 +718,7 @@ function renderSidebar(){
     </div>
     <div class="brand">SOS Quatro Patas</div>
     <div class="brand-sub">Prestação de contas</div>
-    ${usandoArmazenamentoLocal ? `<div style="font-size:11px;background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:6px 8px;margin-bottom:12px;">Salvando neste navegador/computador. Exporte um backup de vez em quando por segurança.</div>` : ''}
+    ${usandoArmazenamentoLocal && !driveState.connected ? `<div style="font-size:11px;background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:6px 8px;margin-bottom:12px;">Salvando neste navegador/computador. Exporte um backup de vez em quando por segurança.</div>` : ''}
     ${atualizacaoDisponivel ? `<div class="no-print" style="font-size:11.5px;background:var(--danger-bg);color:var(--danger);border-radius:6px;padding:8px;margin-bottom:12px;"><strong>Outra pessoa salvou alterações.</strong><br>O que você está vendo pode estar desatualizado.<br><button class="small" onclick="recarregarDados()" style="width:100%;margin-top:6px;">Recarregar agora</button></div>` : ''}
     <div class="nav-item ${view.page==='dashboard'?'active':''}" onclick="goDashboard()">
       <span>Painel geral</span>
