@@ -1785,8 +1785,8 @@ function renderPorAnimal(p, cfg){
     return `<div class="empty">Nenhuma foto ou ficha médica adicionada ainda. Adicione na aba "Fotos e vídeos" e marque o nome do animal em cada uma.</div>`;
   }
   const itemHtml = a => `
-    <div style="width:220px;">
-      <div id="anexo-view-${a.id}" style="width:220px;height:220px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;overflow:hidden;border:1px solid #ccc;">Carregando...</div>
+    <div style="width:480px;max-width:100%;">
+      <div id="anexo-view-${a.id}" style="width:100%;min-height:100px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:11px;color:#888;border:1px solid #ccc;">Carregando...</div>
       <div style="font-size:11px;text-align:center;margin-top:4px;">${a.tipo==='foto'?'Foto':'Ficha médica'} — ${escapeHtml(a.nome)}</div>
     </div>
   `;
@@ -1844,7 +1844,8 @@ async function injetarConteudoAnexo(elId, dataUrl){
         const pdf = await pdfjsLib.getDocument({data: u8.slice()}).promise;
         const page = await pdf.getPage(1);
         const viewportBase = page.getViewport({scale:1});
-        const scale = 210 / viewportBase.width;
+        const larguraAlvo = el.clientWidth || 480;
+        const scale = larguraAlvo / viewportBase.width;
         const viewport = page.getViewport({scale});
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
@@ -1864,7 +1865,7 @@ async function injetarConteudoAnexo(elId, dataUrl){
       }
     }catch(e){ el.innerHTML = '<span style="font-size:10px;color:var(--danger);">Erro ao exibir PDF</span>'; }
   } else {
-    el.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;">`;
+    el.innerHTML = `<img src="${dataUrl}" style="width:100%;height:auto;display:block;">`;
   }
 }
 async function carregarAnexosPorAnimal(p){
