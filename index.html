@@ -134,6 +134,7 @@
     .doc-preview h2, .doc-preview h3{ page-break-after:avoid; }
     .doc-preview .sig{ page-break-inside:avoid; }
     .anexo-caixa{ height:calc(100vh - 90px); }
+    .anexo-caixa-primeira{ height:calc(100vh - 220px); }
   }
 </style>
 </head>
@@ -1839,9 +1840,9 @@ function renderPorAnimal(p, cfg){
   if(!nomes.length){
     return `<div class="empty">Nenhuma foto ou ficha médica adicionada ainda. Adicione na aba "Fotos e vídeos" e marque o nome do animal em cada uma.</div>`;
   }
-  const itemHtml = a => `
-    <div style="width:540px;max-width:100%;">
-      <div id="anexo-view-${a.id}" class="anexo-caixa">Carregando...</div>
+  const itemHtml = (a, primeira) => `
+    <div style="width:100%;">
+      <div id="anexo-view-${a.id}" class="anexo-caixa${primeira ? ' anexo-caixa-primeira' : ''}">Carregando...</div>
       <div style="font-size:11px;text-align:center;margin-top:4px;">${a.tipo==='foto'?'Foto':'Ficha médica'} — ${escapeHtml(a.nome)}</div>
     </div>
   `;
@@ -1850,20 +1851,23 @@ function renderPorAnimal(p, cfg){
     const fotos = itens.filter(a=>a.tipo==='foto');
     const fichas = itens.filter(a=>a.tipo==='ficha');
     const isUltimoAnimal = idx === nomes.length-1;
+    const isPrimeiroAnimal = idx === 0;
     let paginas = '';
     if(fotos.length){
+      const primeira = isPrimeiroAnimal;
       paginas += `
         <div style="${(fichas.length || !isUltimoAnimal) ? 'page-break-after:always;' : ''}min-height:1px;">
           <h3 style="text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;">${escapeHtml(nome)} — Fotos</h3>
-          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${fotos.map(itemHtml).join('')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${fotos.map(a=>itemHtml(a, primeira)).join('')}</div>
         </div>
       `;
     }
     if(fichas.length){
+      const primeira = isPrimeiroAnimal && !fotos.length;
       paginas += `
         <div style="${!isUltimoAnimal ? 'page-break-after:always;' : ''}min-height:1px;">
           <h3 style="text-align:left;border-bottom:1px solid #ccc;padding-bottom:4px;">${escapeHtml(nome)} — Prontuário</h3>
-          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${fichas.map(itemHtml).join('')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;">${fichas.map(a=>itemHtml(a, primeira)).join('')}</div>
         </div>
       `;
     }
@@ -1877,10 +1881,8 @@ function renderPorAnimal(p, cfg){
       <button onclick="window.print()">Imprimir / salvar PDF</button>
     </div>
     <div class="doc-preview" id="doc-por-animal">
-      <div style="page-break-after:always;">
-        ${docLogo()}
-        <h2>FOTOS E FICHAS POR ANIMAL</h2>
-      </div>
+      ${docLogo()}
+      <h2>FOTOS E FICHAS POR ANIMAL</h2>
       ${gruposHtml}
     </div>
   `;
